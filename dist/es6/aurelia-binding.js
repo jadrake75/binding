@@ -1,76 +1,252 @@
 import * as core from 'core-js';
 import {TaskQueue} from 'aurelia-task-queue';
-import {All,Container} from 'aurelia-dependency-injection';
+import {Container} from 'aurelia-dependency-injection';
 import {Decorators,Metadata} from 'aurelia-metadata';
 
+function addSubscriber(context, callable) {
+  if (this.hasSubscriber(context, callable)) {
+    return false;
+  }
+  if (!this._context0) {
+    this._context0 = context;
+    this._callable0 = callable;
+    return true;
+  }
+  if (!this._context1) {
+    this._context1 = context;
+    this._callable1 = callable;
+    return true;
+  }
+  if (!this._context2) {
+    this._context2 = context;
+    this._callable2 = callable;
+    return true;
+  }
+  if (!this._contextsRest) {
+    this._contextsRest = [context];
+    this._callablesRest = [callable];
+    return true;
+  }
+  this._contextsRest.push(context);
+  this._callablesRest.push(callable);
+  return true;
+}
+
+function removeSubscriber(context, callable) {
+  if (this._context0 === context && this._callable0 === callable) {
+    this._context0 = null;
+    this._callable0 = null;
+    return true;
+  }
+  if (this._context1 === context && this._callable1 === callable) {
+    this._context1 = null;
+    this._callable1 = null;
+    return true;
+  }
+  if (this._context2 === context && this._callable2 === callable) {
+    this._context2 = null;
+    this._callable2 = null;
+    return true;
+  }
+  let rest = this._contextsRest;
+  let index;
+  if (!rest || !rest.length || (index = rest.indexOf(context)) === -1 || this._callablesRest[index] !== callable) {
+    return false;
+  }
+  rest.splice(index, 1);
+  this._callablesRest.splice(index, 1);
+  return true;
+}
+
+let tempContextsRest = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null];
+let tempCallablesRest = [null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null];
+
+function callSubscribers(newValue, oldValue) {
+  let context0 = this._context0;
+  let callable0 = this._callable0;
+  let context1 = this._context1;
+  let callable1 = this._callable1;
+  let context2 = this._context2;
+  let callable2 = this._callable2;
+  let length = !this._contextsRest ? 0 : this._contextsRest.length;
+  let i = length;
+  if (length) {
+    while(i--) {
+      tempContextsRest[i] = this._contextsRest[i];
+      tempCallablesRest[i] = this._callablesRest[i];
+    }
+  }
+
+  if (context0) {
+    if (callable0) {
+      callable0.call(context0, newValue, oldValue);
+    } else {
+      context0(newValue, oldValue);
+    }
+  }
+  if (context1) {
+    if (callable1) {
+      callable1.call(context1, newValue, oldValue);
+    } else {
+      context1(newValue, oldValue);
+    }
+  }
+  if (context2) {
+    if (callable2) {
+      callable2.call(context2, newValue, oldValue);
+    } else {
+      context2(newValue, oldValue);
+    }
+  }
+  for (i = 0; i < length; i++) {
+    let callable = tempCallablesRest[i];
+    let context = tempContextsRest[i]
+    if (callable) {
+      callable.call(context, newValue, oldValue);
+    } else {
+      context(newValue, oldValue);
+    }
+    tempContextsRest[i] = null;
+    tempCallablesRest[i] = null;
+  }
+}
+
+function hasSubscribers() {
+  return !!(
+    this._context0
+    || this._context1
+    || this._context2
+    || this._contextsRest && this._contextsRest.length);
+}
+
+function hasSubscriber(context, callable) {
+  let has = this._context0 === context && this._callable0 === callable
+    || this._context1 === context && this._callable1 === callable
+    || this._context2 === context && this._callable2 === callable;
+  if (has) {
+    return true;
+  }
+  let index;
+  let contexts = this._contextsRest;
+  if (!contexts || (index = contexts.length) === 0) {
+    return false;
+  }
+  let callables = this._callablesRest;
+  while (index--) {
+    if (contexts[index] === context && callables[index] === callable) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function subscriberCollection() {
+  return function(target) {
+    target.prototype.addSubscriber = addSubscriber;
+    target.prototype.removeSubscriber = removeSubscriber;
+    target.prototype.callSubscribers = callSubscribers;
+    target.prototype.hasSubscribers = hasSubscribers;
+    target.prototype.hasSubscriber = hasSubscriber;
+  }
+}
+
+const objectChangedContext = 'objectChanged';
+const keyChangedContext = 'keyChanged';
+const memberChangedContext = 'memberChanged';
+
 export class AccessKeyedObserver {
-  constructor(objectInfo, keyInfo, observerLocator, evaluate) {
-    this.objectInfo = objectInfo;
-    this.keyInfo = keyInfo;
-    this.evaluate = evaluate;
-    this.observerLocator = observerLocator;
-
-    if (keyInfo.observer) {
-      this.disposeKey = keyInfo.observer.subscribe(newValue => this.objectOrKeyChanged(undefined, newValue));
-    }
-
-    if (objectInfo.observer) {
-      this.disposeObject = objectInfo.observer.subscribe(newValue => this.objectOrKeyChanged(newValue));
-    }
-
-    this.updatePropertySubscription(objectInfo.value, keyInfo.value);
+  constructor(expression, scope, binding) {
+    this.expression = expression;
+    this.scope = scope;
+    this.binding = binding;
+    this.value = this.expression.evaluate(this.scope, this.binding.valueConverterLookupFunction);
   }
 
-  updatePropertySubscription(object, key) {
-    if (this.disposeProperty) {
-      this.disposeProperty();
-      this.disposeProperty = null;
+  getValue() {
+    return this.value;
+  }
+
+  setValue(newValue) {
+    this.value = newValue;
+    this.expression.assign(this.scope, newValue);
+  }
+
+  subscribe(context, callable) {
+    this.context = context;
+    this.callable = callable;
+    this.objectInfo = this.expression.object.connect(this.binding, this.scope);
+    if (this.objectInfo.observer) {
+      this.objectInfo.observer.subscribe(objectChangedContext, this);
     }
-    if (object instanceof Object) {  // objects, arrays, etc - (non primitives)
-      this.disposeProperty = this.observerLocator.getObserver(object, key)
-        .subscribe(() => this.notify());
+    let key;
+    if (this.expression.key) {
+      // AccessKeyed
+      this.keyInfo = this.expression.key.connect(this.binding, this.scope);
+      key = this.keyInfo.value;
+      if (this.keyInfo.observer) {
+        this.keyInfo.observer.subscribe(keyChangedContext, this);
+      }
+    } else {
+      // AccessMember
+      key = this.expression.name;
+    }
+    this.subscribeMember(this.objectInfo.value, key);
+  }
+
+  unsubscribe(context, callable) {
+    this.context = null;
+    this.callable = null;
+    if (this.objectInfo.observer) {
+      this.objectInfo.observer.unsubscribe(objectChangedContext, this);
+    }
+    if (this.keyInfo && this.keyInfo.observer) {
+      this.keyInfo.observer.unsubscribe(keyChangedContext, this);
+    }
+    this.unsubscribeMember();
+  }
+
+  subscribeMember(object, key) {
+    this.unsubscribeMember();
+    if (object instanceof Object && key !== null && key !== undefined) {
+      this.memberObserver = this.binding.getObserver(object, key);
+      this.memberObserver.subscribe(memberChangedContext, this);
     }
   }
 
-  objectOrKeyChanged(object, key) {
-    let oo;
-    let ko;
-    object = object || ((oo = this.objectInfo.observer) && oo.getValue ? oo.getValue() : this.objectInfo.value);
-    key = key || ((ko = this.keyInfo.observer) && ko.getValue ? ko.getValue() : this.keyInfo.value);
-    this.updatePropertySubscription(object, key);
-    this.notify();
-  }
-
-  subscribe(callback) {
-    var that = this;
-    that.callback = callback;
-    return function() {
-      that.callback = null;
-    };
-  }
-
-  notify() {
-    var callback = this.callback;
-
-    if(callback){
-      callback(this.evaluate());
+  unsubscribeMember() {
+    if (this.memberObserver) {
+      this.memberObserver.unsubscribe(memberChangedContext, this);
+      this.memberObserver = null;
     }
   }
 
-  dispose() {
-    this.objectInfo = null;
-    this.keyInfo = null;
-    this.evaluate = null;
-    this.observerLocator = null;
-    if (this.disposeObject) {
-      this.disposeObject();
+  objectChanged(newValue, oldValue) {
+    this.memberChanged(this.expression.evaluate(this.scope, this.binding.valueConverterLookupFunction), this.value);
+    this.unsubscribeMember();
+    let key = this.expression.key ? this.expression.key.evaluate(this.scope, this.binding.valueConverterLookupFunction) : this.expression.name;
+    this.subscribeMember(newValue, key);
+  }
+
+  keyChanged(newValue, oldValue) {
+    this.memberChanged(this.expression.evaluate(this.scope, this.binding.valueConverterLookupFunction), this.value);
+    this.unsubscribeMember();
+    this.subscribeMember(this.expression.object.evaluate(this.scope, this.binding.valueConverterLookupFunction), newValue);
+  }
+
+  memberChanged(newValue, oldValue) {
+    if (newValue === oldValue || !this.context) {
+      return;
     }
-    if (this.disposeKey) {
-      this.disposeKey();
+    this.value = newValue;
+    if (this.callable) {
+      this.callable.call(this.context, newValue, oldValue);
+    } else {
+      this.context(newValue, oldValue);
     }
-    if (this.disposeProperty) {
-      this.disposeProperty();
-    }
+  }
+
+  call(context, newValue, oldValue) {
+    this[context](newValue, oldValue);
   }
 }
 
@@ -553,128 +729,117 @@ export function getChangeRecords(map){
   return entries;
 }
 
+@subscriberCollection()
 export class ModifyCollectionObserver {
-
-  constructor(taskQueue, collection){
+  constructor(taskQueue, collection) {
     this.taskQueue = taskQueue;
     this.queued = false;
-    this.callbacks = [];
-    this.changeRecords = [];
+    this.changeRecords = null;
     this.oldCollection = null;
     this.collection = collection;
     this.lengthPropertyName = collection instanceof Map ? 'size' : 'length';
   }
 
-  subscribe(callback){
-    var callbacks = this.callbacks;
-    callbacks.push(callback);
-    return function(){
-      callbacks.splice(callbacks.indexOf(callback), 1);
-    };
+  subscribe(context, callable) {
+    this.addSubscriber(context, callable);
+  }
+
+  unsubscribe(context, callable) {
+    this.removeSubscriber(context, callable);
   }
 
   addChangeRecord(changeRecord){
-    if(this.callbacks.length === 0 && !this.lengthObserver){
+    if (!this.hasSubscribers() && !this.lengthObserver) {
       return;
     }
 
-    this.changeRecords.push(changeRecord);
+    if (this.changeRecords === null) {
+      this.changeRecords = [changeRecord];
+    } else {
+      this.changeRecords.push(changeRecord);
+    }
 
-    if(!this.queued){
+    if (!this.queued) {
       this.queued = true;
       this.taskQueue.queueMicroTask(this);
     }
   }
 
-  reset(oldCollection){
-    if(!this.callbacks.length){
-      return;
-    }
-
+  reset(oldCollection) {
     this.oldCollection = oldCollection;
 
-    if(!this.queued){
+    if (this.hasSubscribers() && !this.queued) {
       this.queued = true;
       this.taskQueue.queueMicroTask(this);
     }
   }
 
-  getLengthObserver(){
+  getLengthObserver() {
     return this.lengthObserver || (this.lengthObserver = new CollectionLengthObserver(this.collection));
   }
 
-  call(){
-    var callbacks = this.callbacks,
-      i = callbacks.length,
-      changeRecords = this.changeRecords,
-      oldCollection = this.oldCollection,
-      records;
+  call() {
+    let changeRecords = this.changeRecords;
+    let oldCollection = this.oldCollection;
+    let records;
 
     this.queued = false;
     this.changeRecords = [];
     this.oldCollection = null;
 
-    if(i){
-      if(oldCollection){
+    if (this.hasSubscribers()) {
+      if (oldCollection){
         // TODO (martingust) we might want to refactor this to a common, independent of collection type, way of getting the records
-        if(this.collection instanceof Map){
+        if (this.collection instanceof Map) {
           records = getChangeRecords(oldCollection);
-        }else {
+        } else {
           //we might need to combine this with existing change records....
           records = calcSplices(this.collection, 0, this.collection.length, oldCollection, 0, oldCollection.length);
         }
-      }else{
-        if(this.collection instanceof Map){
+      } else {
+        if (this.collection instanceof Map) {
           records = changeRecords;
-        }else {
+        } else {
           records = projectArraySplices(this.collection, changeRecords);
         }
       }
 
-      while(i--) {
-        callbacks[i](records);
-      }
+      this.callSubscribers(records);
     }
 
-    if(this.lengthObserver){
+    if (this.lengthObserver) {
       this.lengthObserver.call(this.collection[this.lengthPropertyName]);
     }
   }
 }
 
+@subscriberCollection()
 export class CollectionLengthObserver {
-  constructor(collection){
+  constructor(collection) {
     this.collection = collection;
-    this.callbacks = [];
     this.lengthPropertyName = collection instanceof Map ? 'size' : 'length';
     this.currentValue = collection[this.lengthPropertyName];
   }
 
-  getValue(){
+  getValue() {
     return this.collection[this.lengthPropertyName];
   }
 
-  setValue(newValue){
+  setValue(newValue) {
     this.collection[this.lengthPropertyName] = newValue;
   }
 
-  subscribe(callback){
-    var callbacks = this.callbacks;
-    callbacks.push(callback);
-    return function(){
-      callbacks.splice(callbacks.indexOf(callback), 1);
-    };
+  subscribe(context, callable) {
+    this.addSubscriber(context, callable);
+  }
+
+  unsubscribe(context, callable) {
+    this.removeSubscriber(context, callable);
   }
 
   call(newValue){
-    var callbacks = this.callbacks,
-      i = callbacks.length,
-      oldValue = this.currentValue;
-
-    while(i--) {
-      callbacks[i](newValue, oldValue);
-    }
-
+    let oldValue = this.currentValue;
+    this.callSubscribers(newValue, oldValue);
     this.currentValue = newValue;
   }
 }
@@ -773,144 +938,178 @@ class ModifyArrayObserver extends ModifyCollectionObserver {
   }
 }
 
+@subscriberCollection()
 class ArrayObserveObserver {
   constructor(array){
     this.array = array;
-    this.callbacks = [];
   }
 
-  subscribe(callback){
-    var callbacks = this.callbacks;
-
-    if(callbacks.length === 0){
+  subscribe(context, callable) {
+    if (!this.hasSubscribers()) {
       this.handler = this.handleChanges.bind(this);
       Array.observe(this.array, this.handler);
     }
+    this.addSubscriber(context, callable)
+  }
 
-    callbacks.push(callback);
-
-    return () => {
-      callbacks.splice(callbacks.indexOf(callback), 1);
-      if (callbacks.length === 0) {
-        Array.unobserve(this.array, this.handler)
-      }
-    };
+  unsubscribe(context, callable) {
+    if (this.removeSubscriber(context, callable) && !this.hasSubscribers()) {
+      Array.unobserve(this.array, this.handler);
+    }
   }
 
   getLengthObserver(){
     return this.lengthObserver || (this.lengthObserver = new CollectionLengthObserver(this.array));
   }
 
-  handleChanges(changeRecords){
-    var callbacks = this.callbacks,
-        i = callbacks.length,
-        splices;
-
-    if(i){
-      splices = projectArraySplices(this.array, changeRecords);
-
-      while(i--) {
-        callbacks[i](splices);
-      }
+  handleChanges(changeRecords) {
+    if (this.hasSubscribers()) {
+      let splices = projectArraySplices(this.array, changeRecords);
+      this.callSubscribers(splices);
     }
 
-    if(this.lengthObserver){
+    if (this.lengthObserver){
       this.lengthObserver.call(this.array.length);
     }
   }
 }
 
-export class PathObserver {
-  constructor(leftObserver, getRightObserver, value){
-    this.leftObserver = leftObserver;
-    
-    this.disposeLeft = leftObserver.subscribe((newValue) => {
-      var newRightValue = this.updateRight(getRightObserver(newValue));
-      this.notify(newRightValue);
-    });
-
-    this.updateRight(getRightObserver(value));
-  }
-
-  updateRight(observer){
-    this.rightObserver = observer;
-
-    if(this.disposeRight){
-      this.disposeRight();
-    }
-
-    if(!observer){
-      return null;
-    }
-
-    this.disposeRight = observer.subscribe(newValue => this.notify(newValue));
-    return observer.getValue();
-  }
-
-  subscribe(callback){
-    var that = this;
-    that.callback = callback;
-    return function(){
-      that.callback = null;
-    };
-  }
-
-  notify(newValue){
-    var callback = this.callback;
-
-    if(callback){
-      callback(newValue);
-    }
-  }
-
-  dispose(){
-    if(this.disposeLeft){
-      this.disposeLeft();
-    }
-
-    if(this.disposeRight){
-      this.disposeRight();
-    }
-  }
-}
+const conditionAlways = primary => true;
+const childChangedContext = 'childChanged';
 
 export class CompositeObserver {
-  constructor(observers, evaluate){
-    this.subscriptions = new Array(observers.length);
-    this.evaluate = evaluate;
-
-    for(var i = 0, ii = observers.length; i < ii; i++){
-      this.subscriptions[i] = observers[i].subscribe((newValue) => {
-        this.notify(this.evaluate());
-      });
-    }
+  constructor(expression, scope, binding) {
+    this.expression = expression;
+    this.scope = scope;
+    this.binding = binding;
+    this.value = this.expression.evaluate(this.scope, this.binding.valueConverterLookupFunction);
   }
 
-  subscribe(callback){
-    var that = this;
-    that.callback = callback;
-    return function(){
-      that.callback = null;
+  getValue() {
+    return this.value;
+  }
+
+  subscribe(context, callable) {
+    this.context = context;
+    this.callable = callable;
+    this.connect(true);
+  }
+
+  unsubscribe(context, callable) {
+    this.context = null;
+    this.callable = null;
+    this.connect(false);
+  }
+
+  addPrimary(expression) {
+    this.primary = this.addChild(expression);
+    this.primaryValue = this.primary.value;
+  }
+
+  addChild(expression, condition) {
+    condition = condition || conditionAlways;
+    let info;
+    if (condition(this.primaryValue)) {
+      info = expression.connect(this.binding, this.scope);
+      if (!info.observer) {
+        // the expression is not observable
+        return info;
+      }
+    }
+    let child = {
+      expression: expression,
+      condition: condition,
+      info: info,
+      subscribed: false
     };
+    this.children = this.children || (this.children = []); // lazily create childen array.
+    this.children.push(child);
+    return info;
   }
 
-  notify(newValue){
-    var callback = this.callback;
+  get isObservable() {
+    return !!this.children;
+  }
 
-    if(callback){
-      callback(newValue);
+  call(context) {
+    // notify
+    let oldValue = this.value;
+    let newValue = this.expression.evaluate(this.scope, this.binding.valueConverterLookupFunction);
+    this.value = newValue;
+    if (this.context) {
+      this.callable.call(this.context, newValue, oldValue);
+    } else {
+      this.context(newValue, oldValue);
     }
+    // synchronize observers
+    this.connect(true);
   }
 
-  dispose(){
-    var subscriptions = this.subscriptions;
+  connect(connect) {
+    let length = this.children.length;
+    let primary = this.primary;
+    let primaryValue = undefined;
+    if (primary) {
+      primaryValue = primary.observer ? primary.observer.getValue() : primary.value;
+    }
+    for (let i = 0; i < length; i++) {
+      let child = this.children[i];
+      let conditionMet = child.condition(primaryValue);
 
-    var i = subscriptions.length;
-    while(i--) {
-      subscriptions[i]();
+      if (connect && conditionMet) {
+        // connect + subscribe
+        if (!child.info) {
+          child.info = child.expression.connect(this.binding, this.scope);
+        }
+        if (!child.subscribed && child.info.observer) {
+          child.info.observer.subscribe(childChangedContext, this);
+          child.subscribed = true;
+        }
+        continue;
+      }
+
+      // unsubscribe
+      if (!child.subscribed) {
+        continue;
+      }
+      child.info.observer.unsubscribe(childChangedContext, this);
     }
   }
 }
+
+// ValueConverter
+// - Args
+//
+// Conditional
+// - Condition
+// - Yes
+// - No
+// - should not connect Yes if Condition is falsey
+// - should not connect No if Condition is truthy
+//
+// CallScope
+// - Name
+// - Args
+// - should not connect args if name is null/Undefined/not a function
+//
+// CallMember
+// - Instance
+// - Args
+// - should not connect args if instance is null/Undefined/not a function
+//
+// CallFunction
+// - Func
+// - Args
+// - should not connect args if instance is null/Undefined/not a function
+//
+// Binary
+// - Left
+// - Right
+// - should not connect Right if operator is && and Left is falsey
+// - should not connect Right if operator is || and Left is truthy
+//
+// PrefixNot
+// - expression
 
 export class Expression {
   constructor(){
@@ -1001,29 +1200,22 @@ export class ValueConverter extends Expression {
     visitor.visitValueConverter(this);
   }
 
-  connect(binding, scope){
-    var observer,
-        childObservers = [],
-        i, ii, exp, expInfo;
-
-    for(i = 0, ii = this.allArgs.length; i<ii; ++i){
-      exp = this.allArgs[i]
-      expInfo = exp.connect(binding, scope);
-
-      if(expInfo.observer){
-        childObservers.push(expInfo.observer);
-      }
+  connect(binding, scope) {
+    let i = this.allArgs.length;
+    if (i === 0) {
+      return {
+        value: this.evaluate(scope, binding.valueConverterLookupFunction)
+      };
     }
 
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
+    let observer = new CompositeObserver(this, scope, binding);
+    while (i--) {
+      observer.addChild(this.allArgs[i]);
     }
 
     return {
-      value:this.evaluate(scope, binding.valueConverterLookupFunction),
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1067,33 +1259,13 @@ export class Conditional extends Expression {
   }
 
   connect(binding, scope){
-    var conditionInfo = this.condition.connect(binding, scope),
-        yesInfo = this.yes.connect(binding, scope),
-        noInfo = this.no.connect(binding, scope),
-        childObservers = [],
-        observer;
-
-    if(conditionInfo.observer){
-      childObservers.push(conditionInfo.observer);
-    }
-
-    if(yesInfo.observer){
-      childObservers.push(yesInfo.observer);
-    }
-
-    if(noInfo.observer){
-      childObservers.push(noInfo.observer);
-    }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
+    let observer = new CompositeObserver(this, scope, binding);
+    observer.addPrimary(this.condition);
+    observer.addChild(this.yes, conditionValue => !!conditionValue);
+    observer.addChild(this.no, conditionValue => !conditionValue);
     return {
-      value:(!!conditionInfo.value) ? yesInfo.value : noInfo.value,
-      observer: observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1159,30 +1331,10 @@ export class AccessMember extends Expression {
     visitor.visitAccessMember(this);
   }
 
-  connect(binding, scope){
-    var info = this.object.connect(binding, scope),
-        objectInstance = info.value,
-        objectObserver = info.observer,
-        observer;
-
-    if(objectObserver){
-      observer = new PathObserver(
-        objectObserver,
-        value => {
-          if(value == null || value == undefined){
-            return value;
-          }
-
-          return binding.getObserver(value, this.name)
-        },
-        objectInstance
-        );
-    }else{
-      observer = binding.getObserver(objectInstance, this.name);
-    }
-
+  connect(binding, scope) {
+    let observer = new AccessKeyedObserver(this, scope, binding);
     return {
-      value: objectInstance == null ? null : objectInstance[this.name], //TODO: use prop abstraction
+      value: observer.getValue(),
       observer: observer
     }
   }
@@ -1214,14 +1366,10 @@ export class AccessKeyed extends Expression {
   }
 
   connect(binding, scope){
-    var objectInfo = this.object.connect(binding, scope),
-        keyInfo = this.key.connect(binding, scope),
-        observer = new AccessKeyedObserver(objectInfo, keyInfo, binding.observerLocator,
-          () => this.evaluate(scope, binding.valueConverterLookupFunction));
-
+    let observer = new AccessKeyedObserver(this, scope, binding);
     return {
-      value:this.evaluate(scope, binding.valueConverterLookupFunction),
-      observer:observer
+      value: observer.getValue(),
+      observer: observer
     };
   }
 }
@@ -1243,29 +1391,16 @@ export class CallScope extends Expression {
     visitor.visitCallScope(this);
   }
 
-  connect(binding, scope){
-    var observer,
-        childObservers = [],
-        i, ii, exp, expInfo;
-
-    for(i = 0, ii = this.args.length; i<ii; ++i){
-      exp = this.args[i];
-      expInfo = exp.connect(binding, scope);
-
-      if(expInfo.observer){
-        childObservers.push(expInfo.observer);
-      }
+  connect(binding, scope) {
+    let observer = new CompositeObserver(this, scope, binding);
+    //observer.addPrimary(new AccessScope(this.name));
+    let length = this.args.length;
+    for (let i = 0; i < length; i++) {
+      observer.addChild(this.args[i]/*, obj => obj !== null && obj !== undefined*/);
     }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
     return {
-      value:this.evaluate(scope, binding.valueConverterLookupFunction),
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1290,33 +1425,15 @@ export class CallMember extends Expression {
   }
 
   connect(binding, scope){
-    var observer,
-        objectInfo = this.object.connect(binding, scope),
-        childObservers = [],
-        i, ii, exp, expInfo;
-
-    if(objectInfo.observer){
-      childObservers.push(objectInfo.observer);
+    let observer = new CompositeObserver(this, scope, binding);
+    observer.addPrimary(this.object); //observer.addPrimary(new AccessMember(this.object, this.name));
+    let length = this.args.length;
+    for (let i = 0; i < length; i++) {
+      observer.addChild(this.args[i], obj => obj !== null && obj !== undefined);
     }
-
-    for(i = 0, ii = this.args.length; i<ii; ++i){
-      exp = this.args[i];
-      expInfo = exp.connect(binding, scope);
-
-      if(expInfo.observer){
-        childObservers.push(expInfo.observer);
-      }
-    }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
     return {
-      value:this.evaluate(scope, binding.valueConverterLookupFunction),
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1343,34 +1460,16 @@ export class CallFunction extends Expression {
     visitor.visitCallFunction(this);
   }
 
-  connect(binding, scope){
-    var observer,
-        funcInfo = this.func.connect(binding, scope),
-        childObservers = [],
-        i, ii, exp, expInfo;
-
-    if(funcInfo.observer){
-      childObservers.push(funcInfo.observer);
+  connect(binding, scope) {
+    let observer = new CompositeObserver(this, scope, binding);
+    observer.addPrimary(this.func);
+    let length = this.args.length;
+    for (let i = 0; i < length; i++) {
+      observer.addChild(this.args[i], f => typeof f === 'function');
     }
-
-    for(i = 0, ii = this.args.length; i<ii; ++i){
-      exp = this.args[i];
-      expInfo = exp.connect(binding, scope);
-
-      if(expInfo.observer){
-        childObservers.push(expInfo.observer);
-      }
-    }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
     return {
-      value:this.evaluate(scope, binding.valueConverterLookupFunction),
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1438,29 +1537,17 @@ export class Binary extends Expression {
     visitor.visitBinary(this);
   }
 
-  connect(binding, scope){
-    var leftInfo = this.left.connect(binding, scope),
-        rightInfo = this.right.connect(binding, scope),
-        childObservers = [],
-        observer;
-
-    if(leftInfo.observer){
-      childObservers.push(leftInfo.observer);
+  connect(binding, scope) {
+    let observer = new CompositeObserver(this, scope, binding);
+    observer.addPrimary(this.left);
+    if (this.operation === '&&') {
+      observer.addChild(this.right, left => !!left);
+    } else if (this.operation === '||') {
+      observer.addChild(this.right, left => !left);
     }
-
-    if(rightInfo.observer){
-      childObservers.push(rightInfo.observer);
-    }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
     return {
-      value:this.evaluate(scope, binding.valueConverterLookupFunction),
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1481,19 +1568,12 @@ export class PrefixNot extends Expression {
     visitor.visitPrefix(this);
   }
 
-  connect(binding, scope){
-    var info = this.expression.connect(binding, scope),
-        observer;
-
-    if(info.observer){
-      observer = new CompositeObserver([info.observer], () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
+  connect(binding, scope) {
+    let observer = new CompositeObserver(this, scope, binding);
+    observer.addPrimary(this.expression);
     return {
-      value: !info.value,
-      observer: observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1563,31 +1643,14 @@ export class LiteralArray extends Expression {
   }
 
   connect(binding, scope) {
-    var observer,
-        childObservers = [],
-        results = [],
-        i, ii, exp, expInfo;
-
-    for(i = 0, ii = this.elements.length; i<ii; ++i){
-      exp = this.elements[i];
-      expInfo = exp.connect(binding, scope);
-
-      if(expInfo.observer){
-        childObservers.push(expInfo.observer);
-      }
-
-      results[i] = expInfo.value;
+    var observer = new CompositeObserver(this, scope, binding);
+    let length = this.elements.length;
+    for (let i = 0; i < length; i++) {
+      observer.addChild(this.elements[i]);
     }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
     return {
-      value:results,
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -1619,33 +1682,14 @@ export class LiteralObject extends Expression {
   }
 
   connect(binding, scope){
-    var observer,
-        childObservers = [],
-        instance = {},
-        keys = this.keys,
-        values = this.values,
-        length = keys.length,
-        i, valueInfo;
-
-    for(i = 0; i < length; ++i){
-      valueInfo = values[i].connect(binding, scope);
-
-      if(valueInfo.observer){
-        childObservers.push(valueInfo.observer);
-      }
-
-      instance[keys[i]] = valueInfo.value;
+    var observer = new CompositeObserver(this, scope, binding);
+    let length = this.keys.length;
+      for (let i = 0; i < length; i++) {
+      observer.addChild(this.values[i]);
     }
-
-    if(childObservers.length){
-      observer = new CompositeObserver(childObservers, () => {
-        return this.evaluate(scope, binding.valueConverterLookupFunction);
-      });
-    }
-
     return {
-      value:instance,
-      observer:observer
+      value: observer.getValue(),
+      observer: observer.isObservable ? observer : undefined
     };
   }
 }
@@ -2712,7 +2756,7 @@ class ModifyMapObserver extends ModifyCollectionObserver {
 
     map['set'] = function () {
       var oldValue = map.get(arguments[0]);
-      var type = oldValue ? 'update' : 'add';
+      var type = typeof oldValue !== 'undefined' ? 'update' : 'add';
       var methodCallResult = mapProto['set'].apply(map, arguments);
       observer.addChangeRecord({
         type: type,
@@ -2968,97 +3012,73 @@ export class DirtyChecker {
   }
 }
 
+@subscriberCollection()
 export class DirtyCheckProperty {
-  constructor(dirtyChecker, obj, propertyName){
+  constructor(dirtyChecker, obj, propertyName) {
     this.dirtyChecker = dirtyChecker;
     this.obj = obj;
     this.propertyName = propertyName;
-    this.callbacks = [];
-    this.isSVG = obj instanceof SVGElement;
   }
 
-  getValue(){
+  getValue() {
     return this.obj[this.propertyName];
   }
 
-  setValue(newValue){
-    if(this.isSVG){
-      this.obj.setAttributeNS(null, this.propertyName, newValue);
-    }else{
-      this.obj[this.propertyName] = newValue;
-    }
+  setValue(newValue) {
+    this.obj[this.propertyName] = newValue;
   }
 
-  call(){
-    var callbacks = this.callbacks,
-        i = callbacks.length,
-        oldValue = this.oldValue,
-        newValue = this.getValue();
+  call() {
+    let oldValue = this.oldValue;
+    let newValue = this.getValue();
 
-    while(i--) {
-      callbacks[i](newValue, oldValue);
-    }
+    this.callSubscribers(newValue, oldValue);
 
     this.oldValue = newValue;
   }
 
-  isDirty(){
-    return this.oldValue !== this.getValue();
+  isDirty() {
+    return this.oldValue !== this.obj[this.propertyName];
   }
 
-  beginTracking(){
-    this.tracking = true;
-    this.oldValue = this.newValue = this.getValue();
-    this.dirtyChecker.addProperty(this);
-  }
-
-  endTracking(){
-    this.tracking = false;
-    this.dirtyChecker.removeProperty(this);
-  }
-
-  subscribe(callback){
-    var callbacks = this.callbacks,
-        that = this;
-
-    callbacks.push(callback);
-
-    if(!this.tracking){
-      this.beginTracking();
+  subscribe(context, callable) {
+    if (!this.hasSubscribers()) {
+      this.oldValue = this.getValue();
+      this.dirtyChecker.addProperty(this);
     }
+    this.addSubscriber(context, callable);
+  }
 
-    return function(){
-      callbacks.splice(callbacks.indexOf(callback), 1);
-      if(callbacks.length === 0){
-        that.endTracking();
-      }
-    };
+  unsubscribe(context, callable) {
+    if (this.removeSubscriber(context, callable) && !this.hasSubscribers()) {
+      this.dirtyChecker.removeProperty(this);
+    }
   }
 }
 
+@subscriberCollection()
 export class SetterObserver {
   constructor(taskQueue, obj, propertyName){
     this.taskQueue = taskQueue;
     this.obj = obj;
     this.propertyName = propertyName;
-    this.callbacks = [];
     this.queued = false;
     this.observing = false;
   }
 
-  getValue(){
+  getValue() {
     return this.obj[this.propertyName];
   }
 
-  setValue(newValue){
+  setValue(newValue) {
     this.obj[this.propertyName] = newValue;
   }
 
-  getterValue(){
+  getterValue() {
     return this.currentValue;
   }
 
-  setterValue(newValue){
+  setterValue(newValue) {
     var oldValue = this.currentValue;
 
     if(oldValue !== newValue){
@@ -3072,33 +3092,27 @@ export class SetterObserver {
     }
   }
 
-  call(){
-    var callbacks = this.callbacks,
-        i = callbacks.length,
-        oldValue = this.oldValue,
+  call() {
+    var oldValue = this.oldValue,
         newValue = this.currentValue;
 
     this.queued = false;
 
-    while(i--) {
-      callbacks[i](newValue, oldValue);
-    }
+    this.callSubscribers(newValue, oldValue);
   }
 
-  subscribe(callback){
-    var callbacks = this.callbacks;
-    callbacks.push(callback);
-
+  subscribe(context, callable) {
     if(!this.observing){
       this.convertProperty();
     }
-
-    return function(){
-      callbacks.splice(callbacks.indexOf(callback), 1);
-    };
+    this.addSubscriber(context, callable);
   }
 
-  convertProperty(){
+  unsubscribe(context, callable) {
+    this.removeSubscriber(context, callable);
+  }
+
+  convertProperty() {
     this.observing = true;
     this.currentValue = this.obj[this.propertyName];
     this.setValue = this.setterValue;
@@ -3115,19 +3129,47 @@ export class SetterObserver {
   }
 }
 
+@subscriberCollection()
 export class OoPropertyObserver {
-  constructor(obj, propertyName, subscribe){
+  constructor(obj, propertyName) {
     this.obj = obj;
     this.propertyName = propertyName;
-    this.subscribe = subscribe;
   }
 
-  getValue(){
+  getValue() {
     return this.obj[this.propertyName];
   }
 
-  setValue(newValue){
+  setValue(newValue) {
     this.obj[this.propertyName] = newValue;
+  }
+
+  subscribe(context, callable) {
+    if (this.addSubscriber(context, callable)) {
+      this.obj.__observer__.subscriberAdded();
+    }
+  }
+
+  unsubscribe(context, callable) {
+    if (this.removeSubscriber(context, callable)) {
+      this.obj.__observer__.subscriberRemoved();
+    }
+  }
+}
+
+let version = Number.MIN_SAFE_INTEGER;
+function ooHandler(changes) {
+  version++;
+  for (let i = 0, ii = changes.length; i < ii; i++) {
+    let change = changes[i];
+    let name = change.name;
+    let objectObserver = change.object.__observer__;
+    let observer;
+    if (!objectObserver || !(observer = objectObserver.observers[name]) || observer.__version === version) {
+      continue;
+    }
+    observer.__version = version;
+    observer.callSubscribers(change.object[name], change.oldValue);
   }
 }
 
@@ -3136,47 +3178,25 @@ export class OoObjectObserver {
     this.obj = obj;
     this.observerLocator = observerLocator;
     this.observers = {};
-    this.callbacks = {};
-    this.callbackCount = 0;
+    this.subscribers = 0;
   }
 
-  subscribe(propertyName, callback){
-    if (this.callbacks[propertyName]) {
-      this.callbacks[propertyName].push(callback);
-    } else {
-      this.callbacks[propertyName] = [callback];
-      this.callbacks[propertyName].oldValue = this.obj[propertyName];
-    }
-
-    if (this.callbackCount === 0) {
-      this.handler = this.handleChanges.bind(this);
+  subscriberAdded(){
+    if (this.subscribers === 0) {
       try {
-        Object.observe(this.obj, this.handler, ['update', 'add']);
+        Object.observe(this.obj, ooHandler, ['update', 'add']);
       } catch(_) {}
     }
 
-    this.callbackCount++;
-
-    return this.unsubscribe.bind(this, propertyName, callback);
+    this.subscribers++;
   }
 
-  unsubscribe(propertyName, callback) {
-    var callbacks = this.callbacks[propertyName],
-        index = callbacks.indexOf(callback);
-    if (index === -1) {
-      return;
-    }
+  subscriberRemoved(propertyName, callback) {
+    this.subscribers--;
 
-    callbacks.splice(index, 1);
-    if (callbacks.length === 0) {
-      callbacks.oldValue = null;
-      this.callbacks[propertyName] = null;
-    }
-
-    this.callbackCount--;
-    if (this.callbackCount === 0) {
+    if (this.subscribers === 0) {
       try {
-        Object.unobserve(this.obj, this.handler);
+        Object.unobserve(this.obj, ooHandler);
       } catch(_) {}
     }
   }
@@ -3184,130 +3204,9 @@ export class OoObjectObserver {
   getObserver(propertyName, descriptor){
     var propertyObserver = this.observers[propertyName];
     if (!propertyObserver) {
-      if (descriptor) {
-        propertyObserver = this.observers[propertyName] = new OoPropertyObserver(this.obj, propertyName, this.subscribe.bind(this, propertyName));
-      } else {
-        propertyObserver = this.observers[propertyName] = new UndefinedPropertyObserver(this, this.obj, propertyName);
-      }
+      propertyObserver = this.observers[propertyName] = new OoPropertyObserver(this.obj, propertyName);
     }
     return propertyObserver;
-  }
-
-  handleChanges(changes) {
-    var properties = {}, i, ii, change, propertyName, oldValue, newValue, callbacks;
-
-    for(i = 0, ii = changes.length; i < ii; i++){
-      change = changes[i];
-      properties[change.name] = change;
-    }
-
-    for(name in properties){
-      callbacks = this.callbacks[name];
-      if (!callbacks) {
-        continue;
-      }
-      change = properties[name];
-      newValue = change.object[name];
-      oldValue = change.oldValue;
-
-      for (i = 0, ii = callbacks.length; i < ii; i++) {
-        callbacks[i](newValue, oldValue);
-      }
-    }
-  }
-}
-
-export class UndefinedPropertyObserver {
-  constructor(owner, obj, propertyName){
-    this.owner = owner;
-    this.obj = obj;
-    this.propertyName = propertyName;
-    this.callbackMap = new Map();
-  }
-
-  getValue(){
-    // delegate this to the actual observer if possible.
-    if (this.actual){
-      return this.actual.getValue();
-    }
-    return this.obj[this.propertyName];
-  }
-
-  setValue(newValue){
-    // delegate this to the actual observer if possible.
-    if (this.actual){
-      this.actual.setValue(newValue);
-      return;
-    }
-    // define the property and trigger the callbacks.
-    this.obj[this.propertyName] = newValue;
-    this.trigger(newValue, undefined);
-  }
-
-  trigger(newValue, oldValue){
-    var callback;
-
-    // we only care about this event one time:  when the property becomes defined.
-    if (this.subscription){
-      this.subscription();
-    }
-
-    // get the actual observer.
-    this.getObserver();
-
-    // invoke the callbacks.
-    for(callback of this.callbackMap.keys()) {
-      callback(newValue, oldValue);
-    }
-  }
-
-  getObserver() {
-    var callback, observerLocator;
-
-    // has the property has been defined?
-    if (!Object.getOwnPropertyDescriptor(this.obj, this.propertyName)) {
-      return;
-    }
-
-    // get the actual observer.
-    observerLocator = this.owner.observerLocator;
-    delete this.owner.observers[this.propertyName];
-    delete observerLocator.getOrCreateObserversLookup(this.obj, observerLocator)[this.propertyName];
-    this.actual = observerLocator.getObserver(this.obj, this.propertyName);
-
-    // attach any existing callbacks to the actual observer.
-    for(callback of this.callbackMap.keys()) {
-      this.callbackMap.set(callback, this.actual.subscribe(callback));
-    }
-  }
-
-  subscribe(callback){
-    // attempt to get the actual observer in case the property has become
-    // defined since the ObserverLocator returned [this].
-    if (!this.actual) {
-      this.getObserver();
-    }
-
-    // if we have the actual observer, use it.
-    if (this.actual){
-      return this.actual.subscribe(callback);
-    }
-
-    // start listening for the property to become defined.
-    if (!this.subscription){
-      this.subscription = this.owner.subscribe(this.propertyName, this.trigger.bind(this));
-    }
-
-    // cache the callback.
-    this.callbackMap.set(callback, null);
-
-    // return the method to dispose the subscription.
-    return () => {
-      var actualDispose = this.callbackMap.get(callback);
-      if (actualDispose)
-        actualDispose();
-      this.callbackMap.delete(callback);
-    };
   }
 }
 
@@ -3329,7 +3228,7 @@ export class XLinkAttributeObserver {
     return this.element.setAttributeNS('http://www.w3.org/1999/xlink', this.attributeName, newValue);
   }
 
-  subscribe(callback) {
+  subscribe() {
     throw new Error(`Observation of a "${this.element.nodeName}" element\'s "${this.propertyName}" property is not supported.`);
   }
 }
@@ -3348,7 +3247,7 @@ export class DataAttributeObserver {
     return this.element.setAttribute(this.propertyName, newValue);
   }
 
-  subscribe(callback) {
+  subscribe() {
     throw new Error(`Observation of a "${this.element.nodeName}" element\'s "${this.propertyName}" property is not supported.`);
   }
 }
@@ -3370,7 +3269,7 @@ export class StyleObserver {
     this.element.style.cssText = newValue;
   }
 
-  subscribe(callback) {
+  subscribe() {
     throw new Error(`Observation of a "${this.element.nodeName}" element\'s "${this.propertyName}" property is not supported.`);
   }
 
@@ -3385,12 +3284,12 @@ export class StyleObserver {
   }
 }
 
+@subscriberCollection()
 export class ValueAttributeObserver {
   constructor(element, propertyName, handler){
     this.element = element;
     this.propertyName = propertyName;
     this.handler = handler;
-    this.callbacks = [];
   }
 
   getValue() {
@@ -3401,45 +3300,38 @@ export class ValueAttributeObserver {
     this.element[this.propertyName] =
       (newValue === undefined || newValue === null) ? '' : newValue;
 
-    this.call();
+    this.notify();
   }
 
-  call(){
-    var callbacks = this.callbacks,
-        i = callbacks.length,
-        oldValue = this.oldValue,
-        newValue = this.getValue();
+  notify() {
+    let oldValue = this.oldValue;
+    let newValue = this.getValue();
 
-    while(i--) {
-      callbacks[i](newValue, oldValue);
-    }
+    this.callSubscribers(newValue, oldValue);
 
     this.oldValue = newValue;
   }
 
-  subscribe(callback){
-    var that = this;
-
-    if(!this.disposeHandler){
+  subscribe(context, callable) {
+    if (!this.hasSubscribers()) {
       this.oldValue = this.getValue();
-      this.disposeHandler = this.handler.subscribe(this.element, this.call.bind(this));
+      this.disposeHandler = this.handler.subscribe(this.element, this.notify.bind(this));
     }
 
-    this.callbacks.push(callback);
-
-    return this.unsubscribe.bind(this, callback);
+    this.addSubscriber(context, callable);
   }
 
-  unsubscribe(callback) {
-    var callbacks = this.callbacks;
-    callbacks.splice(callbacks.indexOf(callback), 1);
-    if(callbacks.length === 0){
+  unsubscribe(context, callable) {
+    if (this.removeSubscriber(context, callable) && !this.hasSubscribers()) {
       this.disposeHandler();
       this.disposeHandler = null;
     }
   }
 }
 
+const selectArrayContext = 'SelectValueObserver:array'
+
+@subscriberCollection()
 export class SelectValueObserver {
   constructor(element, handler, observerLocator){
     this.element = element;
@@ -3459,14 +3351,14 @@ export class SelectValueObserver {
       return;
     }
     // unsubscribe from old array.
-    if (this.arraySubscription) {
-      this.arraySubscription();
-      this.arraySubscription = null;
+    if (this.arrayObserver) {
+      this.arrayObserver.unsubscribe(selectArrayContext, this);
+      this.arrayObserver = null;
     }
     // subscribe to new array.
     if (Array.isArray(newValue)) {
-      this.arraySubscription = this.observerLocator.getArrayObserver(newValue)
-        .subscribe(this.synchronizeOptions.bind(this));
+      this.arrayObserver = this.observerLocator.getArrayObserver(newValue);
+      this.arrayObserver.subscribe(selectArrayContext, this);
     }
     // assign and sync element.
     this.value = newValue;
@@ -3474,8 +3366,13 @@ export class SelectValueObserver {
     // queue up an initial sync after the bindings have been evaluated.
     if (this.element.options.length > 0 && !this.initialSync) {
       this.initialSync = true;
-      this.observerLocator.taskQueue.queueMicroTask({ call: () => this.synchronizeOptions() });
+      this.observerLocator.taskQueue.queueMicroTask(this);
     }
+  }
+
+  call(context, splices) {
+    // called by task queue and array observer.
+    this.synchronizeOptions();
   }
 
   synchronizeOptions() {
@@ -3504,7 +3401,7 @@ export class SelectValueObserver {
     }
   }
 
-  synchronizeValue(){
+  synchronizeValue() {
     var options = this.element.options, option, i, ii, count = 0, value = [];
 
     for(i = 0, ii = options.length; i < ii; i++) {
@@ -3526,38 +3423,27 @@ export class SelectValueObserver {
 
     this.oldValue = this.value;
     this.value = value;
-    this.call();
+    this.notify();
   }
 
-  call(){
-    var callbacks = this.callbacks,
-        i = callbacks.length,
-        oldValue = this.oldValue,
-        newValue = this.value;
+  notify() {
+    let oldValue = this.oldValue;
+    let newValue = this.value;
 
-    while(i--) {
-      callbacks[i](newValue, oldValue);
+    this.callSubscribers(newValue, oldValue);
+  }
+
+  subscribe(context, callable) {
+    if (!this.hasSubscribers()) {
+      this.disposeHandler = this.handler.subscribe(this.element, this.synchronizeValue.bind(this, false));
     }
+    this.addSubscriber(context, callable);
   }
 
-  subscribe(callback) {
-    if(!this.callbacks) {
-      this.callbacks = [];
-      this.disposeHandler = this.handler
-        .subscribe(this.element, this.synchronizeValue.bind(this, false));
-    }
-
-    this.callbacks.push(callback);
-    return this.unsubscribe.bind(this, callback);
-  }
-
-  unsubscribe(callback) {
-    var callbacks = this.callbacks;
-    callbacks.splice(callbacks.indexOf(callback), 1);
-    if(callbacks.length === 0){
+  unsubscribe(context, callable) {
+    if (this.removeSubscriber(context, callable) && !this.hasSubscribers()) {
       this.disposeHandler();
       this.disposeHandler = null;
-      this.callbacks = null;
     }
   }
 
@@ -3573,13 +3459,16 @@ export class SelectValueObserver {
     this.domObserver.disconnect();
     this.domObserver = null;
 
-    if (this.arraySubscription) {
-      this.arraySubscription();
-      this.arraySubscription = null;
+    if (this.arrayObserver) {
+      this.arrayObserver.unsubscribe(selectArrayContext, this);
+      this.arrayObserver = null;
     }
   }
 }
 
+const checkedArrayContext = 'CheckedObserver:array';
+
+@subscriberCollection()
 export class CheckedObserver {
   constructor(element, handler, observerLocator){
     this.element = element;
@@ -3596,14 +3485,14 @@ export class CheckedObserver {
       return;
     }
     // unsubscribe from old array.
-    if (this.arraySubscription) {
-      this.arraySubscription();
-      this.arraySubscription = null;
+    if (this.arrayObserver) {
+      this.arrayObserver.unsubscribe(checkedArrayContext, this);
+      this.arrayObserver = null;
     }
     // subscribe to new array.
     if (this.element.type === 'checkbox' && Array.isArray(newValue)) {
-      this.arraySubscription = this.observerLocator.getArrayObserver(newValue)
-        .subscribe(this.synchronizeElement.bind(this));
+      this.arrayObserver = this.observerLocator.getArrayObserver(newValue);
+      this.arrayObserver.subscribe(checkedArrayContext, this);
     }
     // assign and sync element.
     this.value = newValue;
@@ -3611,8 +3500,13 @@ export class CheckedObserver {
     // queue up an initial sync after the bindings have been evaluated.
     if (!this.element.hasOwnProperty('model') && !this.initialSync) {
       this.initialSync = true;
-      this.observerLocator.taskQueue.queueMicroTask({ call: () => this.synchronizeElement() });
+      this.observerLocator.taskQueue.queueMicroTask(this);
     }
+  }
+
+  call(context, splices) {
+    // called by task queue and array observer.
+    this.synchronizeElement();
   }
 
   synchronizeElement() {
@@ -3655,45 +3549,34 @@ export class CheckedObserver {
 
     this.oldValue = this.value;
     this.value = value;
-    this.call();
+    this.notify();
   }
 
-  call(){
-    var callbacks = this.callbacks,
-        i = callbacks.length,
-        oldValue = this.oldValue,
-        newValue = this.value;
+  notify() {
+    let oldValue = this.oldValue;
+    let newValue = this.value;
 
-    while(i--) {
-      callbacks[i](newValue, oldValue);
+    this.callSubscribers(newValue, oldValue);
+  }
+
+  subscribe(context, callable) {
+    if(!this.hasSubscribers()) {
+      this.disposeHandler = this.handler.subscribe(this.element, this.synchronizeValue.bind(this, false));
     }
+    this.addSubscriber(context, callable);
   }
 
-  subscribe(callback) {
-    if(!this.callbacks) {
-      this.callbacks = [];
-      this.disposeHandler = this.handler
-        .subscribe(this.element, this.synchronizeValue.bind(this, false));
-    }
-
-    this.callbacks.push(callback);
-    return this.unsubscribe.bind(this, callback);
-  }
-
-  unsubscribe(callback) {
-    var callbacks = this.callbacks;
-    callbacks.splice(callbacks.indexOf(callback), 1);
-    if(callbacks.length === 0){
+  unsubscribe(context, callable) {
+    if(this.removeSubscriber(context, callable) && !this.hasSubscribers()){
       this.disposeHandler();
       this.disposeHandler = null;
-      this.callbacks = null;
     }
   }
 
   unbind() {
-    if (this.arraySubscription) {
-      this.arraySubscription();
-      this.arraySubscription = null;
+    if (this.arrayObserver) {
+      this.arrayObserver.unsubscribe(checkedArrayContext, this);
+      this.arrayObserver = null;
     }
   }
 }
@@ -3713,13 +3596,12 @@ export class ClassObserver {
   setValue(newValue) {
     var nameIndex = this.nameIndex || {},
         version = this.version,
-        names, name, i;
+        names, name;
 
     // Add the classes, tracking the version at which they were added.
     if (newValue !== null && newValue !== undefined && newValue.length) {
       names = newValue.split(' ');
-      i = names.length;
-      while(i--) {
+      for(let i = 0, length = names.length; i < length; i++) {
         name = names[i];
         if (name === '') {
           continue;
@@ -3749,18 +3631,20 @@ export class ClassObserver {
     }
   }
 
-  subscribe(callback) {
+  subscribe() {
     throw new Error(`Observation of a "${this.element.nodeName}" element\'s "class" property is not supported.`);
   }
 }
 
+const computedContext = 'ComputedPropertyObserver';
+
+@subscriberCollection()
 export class ComputedPropertyObserver {
-  constructor(obj, propertyName, descriptor, observerLocator){
+  constructor(obj, propertyName, descriptor, observerLocator) {
     this.obj = obj;
     this.propertyName = propertyName;
     this.descriptor = descriptor;
     this.observerLocator = observerLocator;
-    this.callbacks = [];
   }
 
   getValue(){
@@ -3771,48 +3655,42 @@ export class ComputedPropertyObserver {
     this.obj[this.propertyName] = newValue;
   }
 
-  trigger(newValue, oldValue){
-    var callbacks = this.callbacks,
-        i = callbacks.length;
-
-    while(i--) {
-      callbacks[i](newValue, oldValue);
-    }
-  }
-
-  evaluate() {
-    var newValue = this.getValue();
+  call(context) {
+    let newValue = this.getValue();
     if (this.oldValue === newValue)
       return;
-    this.trigger(newValue, this.oldValue);
+    this.callSubscribers(newValue, this.oldValue);
     this.oldValue = newValue;
+    return;
   }
 
-  subscribe(callback){
-    var dependencies, i, ii;
-
-    this.callbacks.push(callback);
-
-    if (this.oldValue === undefined) {
+  subscribe(context, callable) {
+    if (!this.hasSubscribers()) {
       this.oldValue = this.getValue();
-      this.subscriptions = [];
 
-      dependencies = this.descriptor.get.dependencies;
-      for (i = 0, ii = dependencies.length; i < ii; i++) {
+      let dependencies = this.descriptor.get.dependencies;
+      this.observers = [];
+      for (let i = 0, ii = dependencies.length; i < ii; i++) {
+        let observer = this.observerLocator.getObserver(this.obj, dependencies[i]);
         // todo:  consider throwing when a dependency's observer is an instance of DirtyCheckProperty.
-        this.subscriptions.push(this.observerLocator.getObserver(this.obj, dependencies[i]).subscribe(() => this.evaluate()));
+        this.observers.push(observer);
+        observer.subscribe(computedContext, this);
       }
     }
 
-    return () => {
-      this.callbacks.splice(this.callbacks.indexOf(callback), 1);
-      if (this.callbacks.length > 0)
-        return;
-      while(this.subscriptions.length) {
-        this.subscriptions.pop()();
-      }
+    this.addSubscriber(context, callable);
+  }
+
+  unsubscribe(context, callable) {
+    if (this.removeSubscriber(context, callable) && !this.hasSubscribers()) {
       this.oldValue = undefined;
-    };
+
+      let i = this.observers.length;
+      while(i--) {
+        this.observers[i].unsubscribe(computedContext, this);
+      }
+      this.observers = null;
+    }
   }
 }
 
@@ -4076,12 +3954,12 @@ function createObserverLookup(obj, observerLocator) {
 }
 
 export class ObserverLocator {
-  static inject(){ return [TaskQueue, EventManager, DirtyChecker, All.of(ObjectObservationAdapter)]; }
+  static inject(){ return [TaskQueue, EventManager, DirtyChecker]; }
   constructor(taskQueue, eventManager, dirtyChecker, observationAdapters){
     this.taskQueue = taskQueue;
     this.eventManager = eventManager;
     this.dirtyChecker = dirtyChecker;
-    this.observationAdapters = observationAdapters;
+    this.adapters = [];
   }
 
   getObserver(obj, propertyName){
@@ -4124,18 +4002,23 @@ export class ObserverLocator {
     return value;
   }
 
-  getObservationAdapter(obj, propertyName, descriptor) {
-    var i, ii, observationAdapter;
-    for(i = 0, ii = this.observationAdapters.length; i < ii; i++){
-      observationAdapter = this.observationAdapters[i];
-      if (observationAdapter.handlesProperty(obj, propertyName, descriptor))
-        return observationAdapter;
+  addAdapter(adapter: ObjectObservationAdapter) {
+    this.adapters.push(adapter);
+  }
+
+  getAdapterObserver(obj, propertyName, descriptor) {
+    for (let i = 0, ii = this.adapters.length; i < ii; i++) {
+      let adapter = this.adapters[i];
+      let observer = adapter.getObserver(obj, propertyName, descriptor);
+      if (observer) {
+        return observer;
+      }
     }
     return null;
   }
 
   createPropertyObserver(obj, propertyName){
-    var observerLookup, descriptor, handler, observationAdapter, xlinkResult;
+    var observerLookup, descriptor, handler, xlinkResult;
 
     if(obj instanceof Element){
       if (propertyName === 'class') {
@@ -4177,9 +4060,10 @@ export class ObserverLocator {
       }
 
       // attempt to use an adapter before resorting to dirty checking.
-      observationAdapter = this.getObservationAdapter(obj, propertyName, descriptor);
-      if (observationAdapter)
-        return observationAdapter.getObserver(obj, propertyName, descriptor);
+      let adapterObserver = this.getAdapterObserver(obj, propertyName, descriptor);
+      if (adapterObserver) {
+        return adapterObserver;
+      }
       return new DirtyCheckProperty(this.dirtyChecker, obj, propertyName);
     }
 
@@ -4223,12 +4107,8 @@ export class ObserverLocator {
 }
 
 export class ObjectObservationAdapter {
-  handlesProperty(object, propertyName, descriptor) {
-    throw new Error('BindingAdapters must implement handlesProperty(object, propertyName).');
-  }
-
   getObserver(object, propertyName, descriptor) {
-    throw new Error('BindingAdapters must implement createObserver(object, propertyName).');
+    throw new Error('BindingAdapters must implement getObserver(object, propertyName).');
   }
 }
 
@@ -4268,6 +4148,9 @@ export class BindingExpression {
   }
 }
 
+const sourceContext = 'Binding:source';
+const targetContext = 'Binding:target';
+
 class Binding {
   constructor(observerLocator, sourceExpression, target, targetProperty, mode, valueConverterLookupFunction){
     this.observerLocator = observerLocator;
@@ -4277,65 +4160,71 @@ class Binding {
     this.valueConverterLookupFunction = valueConverterLookupFunction;
   }
 
-  getObserver(obj, propertyName){
+  getObserver(obj, propertyName) {
     return this.observerLocator.getObserver(obj, propertyName);
   }
 
-  bind(source){
-    var targetProperty = this.targetProperty,
-        info;
+  call(context, newValue, oldValue) {
+    if (context === sourceContext) {
+      let current = this.targetProperty.getValue();
+      if (newValue !== current) {
+        this.targetProperty.setValue(newValue);
+      }
+      return;
+    }
+    if (context === targetContext) {
+      this.sourceExpression.assign(this.source, newValue, this.valueConverterLookupFunction);
+      return;
+    }
+    throw new Error(`Unexpected call context ${context}`);
+  }
 
+  bind(source) {
+    if (this.isBound) {
+      if (this.source === source) {
+        return;
+      }
+      this.unbind();
+    }
+    this.isBound = true;
+    this.source = source;
+
+    let targetProperty = this.targetProperty;
     if ('bind' in targetProperty){
       targetProperty.bind();
     }
 
-    if(this.mode == bindingMode.oneWay || this.mode == bindingMode.twoWay){
-      if(this._disposeObserver){
-        if(this.source === source){
-          return;
-        }
-
-        this.unbind();
+    if (this.mode === bindingMode.oneWay || this.mode === bindingMode.twoWay) {
+      let sourceInfo = this.sourceExpression.connect(this, source);
+      this.sourceProperty = sourceInfo.observer;
+      if (this.sourceProperty) {
+        this.sourceProperty.subscribe(sourceContext, this);
       }
 
-      info = this.sourceExpression.connect(this, source);
+      targetProperty.setValue(sourceInfo.value);
 
-      if(info.observer){
-        this._disposeObserver = info.observer.subscribe(newValue =>{
-          var existing = targetProperty.getValue();
-          if(newValue !== existing){
-            targetProperty.setValue(newValue);
-          }
-        });
-      }
-
-      targetProperty.setValue(info.value);
-
-      if(this.mode == bindingMode.twoWay){
-        this._disposeListener = targetProperty.subscribe(newValue => {
-          this.sourceExpression.assign(source, newValue, this.valueConverterLookupFunction);
-        });
+      if (this.mode === bindingMode.twoWay) {
+        targetProperty.subscribe(targetContext, this);
       }
 
       this.source = source;
     } else {
-      var value = this.sourceExpression.evaluate(source, this.valueConverterLookupFunction);
+      let value = this.sourceExpression.evaluate(source, this.valueConverterLookupFunction);
       targetProperty.setValue(value);
     }
   }
 
-  unbind(){
-    if ('unbind' in this.targetProperty){
+  unbind() {
+    this.isBound = false;
+    this.source = null;
+    if ('unbind' in this.targetProperty) {
       this.targetProperty.unbind();
     }
-    if(this._disposeObserver){
-      this._disposeObserver();
-      this._disposeObserver = null;
+    if (this.mode === bindingMode.twoWay) {
+      this.targetProperty.unsubscribe(targetContext, this);
     }
-
-    if(this._disposeListener){
-      this._disposeListener();
-      this._disposeListener = null;
+    if (this.sourceProperty) {
+      this.sourceProperty.unsubscribe(sourceContext, this);
     }
   }
 }
